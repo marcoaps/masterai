@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: masterai
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
