@@ -614,8 +614,9 @@ def processar_stems_job(job_id, input_path):
             capture_output=True, text=True
         )
         if result.returncode != 0:
-            erro = result.stderr[-500:] if result.stderr else "Falha desconhecida no Demucs"
-            raise RuntimeError(erro)
+            detalhes = ((result.stderr or "") + "\n" + (result.stdout or "")).strip()
+            detalhes = detalhes[-1500:] if detalhes else f"Codigo de saida {result.returncode}, sem mensagem"
+            raise RuntimeError(detalhes)
 
         jobs[job_id]["log"].append("Separação concluída, compactando arquivos...")
 
