@@ -6,3 +6,4 @@ librosa
 soundfile
 pyloudnorm
 demucs
+torchcodec
