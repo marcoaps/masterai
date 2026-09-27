@@ -73,7 +73,21 @@
     </div>
 
     <div id="panel-stems" class="hidden">
-      <p class="hint">Separador de stems ainda não está ligado no backend — é a próxima fase do roadmap (separação via Demucs, rodando como job assíncrono, mesmo padrão de log de progresso usado aqui).</p>
+      <p class="hint">Separe vocais, bateria, baixo e outros instrumentos com o Demucs. A separação roda na nuvem e leva alguns minutos.</p>
+
+      <label class="dropzone" id="stems-dropzone">
+        <input type="file" id="stems-input" accept=".wav,.flac,.mp3,.m4a,.aac,.ogg">
+        <div class="title" id="stems-title">Adicione aqui a faixa para separar</div>
+        <div class="formats">WAV, FLAC, MP3, M4A/AAC, OGG</div>
+      </label>
+
+      <button id="btn-stems" class="btn-primary hidden">Separar stems</button>
+
+      <div id="stems-progress" class="progress hidden">
+        <div class="progress-status" id="stems-status">Enviando…</div>
+        <div class="progress-log" id="stems-log"></div>
+        <a id="btn-stems-download" class="btn-primary hidden" href="#">Baixar stems (.zip)</a>
+      </div>
     </div>
   </div>
 </main>

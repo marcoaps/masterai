@@ -8,7 +8,7 @@ echo   MasterAI Pro — Pipeline de Masterizacao
 echo  ================================================
 echo.
 echo  Instalando dependencias...
-pip install flask soundfile librosa scipy pyloudnorm mutagen numpy -q 2>nul
+pip install flask soundfile librosa scipy pyloudnorm mutagen numpy gradio_client==1.13.3 -q 2>nul
 
 echo.
 echo  Servidor iniciando em http://localhost:5000

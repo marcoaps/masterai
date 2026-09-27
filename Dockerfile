@@ -17,4 +17,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # O Render injeta a variável $PORT — o gunicorn precisa escutar nela
-CMD gunicorn --bind 0.0.0.0:$PORT --timeout 300 --workers 2 app:app
+# 1 worker + threads: os jobs ficam na memória (dict jobs) e precisam ser vistos
+# pelo mesmo processo que responde /status. Com 2 workers, o status às vezes
+# dizia "Job não encontrado" e a memória dobrava.
+CMD gunicorn --bind 0.0.0.0:$PORT --timeout 600 --workers 1 --threads 4 app:app

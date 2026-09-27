@@ -5,5 +5,6 @@ scipy
 librosa
 soundfile
 pyloudnorm
-demucs
-torchcodec
+# Separação de stems roda no Hugging Face Spaces (pasta hf_space/).
+# O Render não instala mais demucs/torch: é isso que estourava os 512 MB (erro 502).
+gradio_client==1.13.3

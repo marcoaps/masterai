@@ -1,5 +1,5 @@
 // masterai — frontend
-// Fala direto com as rotas reais do app.py: /upload, /master, /status/<job_id>, /download/<job_id>
+// Fala direto com as rotas reais do app.py: /upload, /master, /separar, /status/<job_id>, /download/<job_id>, /download_stems/<job_id>
 
 const state = {
   fileId: null,
@@ -189,4 +189,117 @@ function statusLabel(status) {
     case 'error': return 'Erro no processamento';
     default: return status;
   }
+}
+
+// ── Separador de stems ───────────────────────────────
+const stems = {
+  fileId: null,
+  jobId: null,
+  polling: null,
+  dropzone: document.getElementById('stems-dropzone'),
+  input: document.getElementById('stems-input'),
+  title: document.getElementById('stems-title'),
+  btn: document.getElementById('btn-stems'),
+  progress: document.getElementById('stems-progress'),
+  status: document.getElementById('stems-status'),
+  log: document.getElementById('stems-log'),
+  download: document.getElementById('btn-stems-download'),
+};
+
+['dragover', 'dragenter'].forEach(evt =>
+  stems.dropzone.addEventListener(evt, e => { e.preventDefault(); stems.dropzone.classList.add('drag'); })
+);
+['dragleave', 'drop'].forEach(evt =>
+  stems.dropzone.addEventListener(evt, e => { e.preventDefault(); stems.dropzone.classList.remove('drag'); })
+);
+stems.dropzone.addEventListener('drop', e => {
+  const file = e.dataTransfer.files[0];
+  if (file) uploadStems(file);
+});
+stems.input.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (file) uploadStems(file);
+});
+
+async function uploadStems(file) {
+  const original = stems.title.textContent;
+  stems.title.textContent = 'Enviando…';
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/upload', { method: 'POST', body: formData });
+    if (!res.ok) throw new Error('Falha no upload');
+    const data = await res.json();
+    stems.fileId = data.file_id;
+    stems.title.textContent = file.name;
+    stems.btn.classList.remove('hidden');
+  } catch (err) {
+    console.error('Erro no upload:', err);
+    stems.title.textContent = original;
+    alert('Não foi possível enviar o arquivo. Tente novamente.');
+  }
+}
+
+stems.btn.addEventListener('click', async () => {
+  if (!stems.fileId) return;
+  stems.btn.disabled = true;
+  stems.progress.classList.remove('hidden');
+  stems.download.classList.add('hidden');
+  stems.status.textContent = 'Enviando para separação…';
+  stems.log.innerHTML = '';
+  try {
+    const res = await fetch('/separar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: stems.fileId }),
+    });
+    if (!res.ok) throw new Error('Falha ao iniciar a separação');
+    const data = await res.json();
+    stems.jobId = data.job_id;
+    pollStems();
+  } catch (err) {
+    console.error(err);
+    stems.status.textContent = 'Erro ao iniciar. Tente novamente.';
+    stems.btn.disabled = false;
+  }
+});
+
+function pollStems() {
+  if (stems.polling) clearInterval(stems.polling);
+  let falhas = 0;
+  stems.polling = setInterval(async () => {
+    try {
+      const res = await fetch(`/status/${stems.jobId}`);
+      if (!res.ok) throw new Error('Job não encontrado');
+      const job = await res.json();
+      falhas = 0;
+      stems.status.textContent = statusLabel(job.status);
+      if (Array.isArray(job.log)) {
+        stems.log.innerHTML = '';
+        job.log.forEach(line => {
+          const div = document.createElement('div');
+          div.textContent = line;
+          stems.log.appendChild(div);
+        });
+        stems.log.scrollTop = stems.log.scrollHeight;
+      }
+      if (job.status === 'done') {
+        clearInterval(stems.polling);
+        stems.download.href = `/download_stems/${stems.jobId}`;
+        stems.download.classList.remove('hidden');
+        stems.btn.disabled = false;
+      } else if (job.status === 'error') {
+        clearInterval(stems.polling);
+        stems.status.textContent = `Erro: ${job.error || 'falha na separação'}`;
+        stems.btn.disabled = false;
+      }
+    } catch (err) {
+      // A separação é longa: tolera algumas falhas de rede antes de desistir.
+      if (++falhas >= 5) {
+        clearInterval(stems.polling);
+        stems.status.textContent = 'Perdemos a conexão com o job. Tente novamente.';
+        stems.btn.disabled = false;
+      }
+    }
+  }, 2000);
 }

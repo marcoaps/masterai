@@ -3,7 +3,7 @@ MasterAI Pro — Backend Flask
 Masterização com loudness maximization profissional
 """
 
-import os, sys, shutil, subprocess, uuid, threading
+import os, sys, shutil, subprocess, uuid, threading, time
 from pathlib import Path
 from flask import Flask, request, jsonify, send_file, send_from_directory
 import numpy as np
@@ -21,6 +21,13 @@ except ImportError as e:
 
 FFMPEG_OK = shutil.which("ffmpeg") is not None
 DEMUCS_OK = shutil.which("demucs") is not None
+
+# Separação de stems no Hugging Face Spaces (grátis, 16 GB de RAM).
+# Configure no Render a variável STEMS_SPACE com o nome do Space,
+# ex.: "marcoaps/masterai-stems". Se o Space for privado, crie também HF_TOKEN.
+# Sem STEMS_SPACE, usa o Demucs local (só funciona no seu PC, não no Render grátis).
+STEMS_SPACE = os.environ.get("STEMS_SPACE", "").strip()
+HF_TOKEN    = os.environ.get("HF_TOKEN", "").strip() or None
 
 app = Flask(__name__, static_folder="static")
 BASE_DIR   = Path(__file__).parent
@@ -603,8 +610,12 @@ def processar_stems_job(job_id, input_path):
         jobs[job_id]["status"] = "processing"
         jobs[job_id]["log"].append("Separando stems (vocais, bateria, baixo, outros)...")
 
+        if STEMS_SPACE:
+            separar_no_space(job_id, input_path)
+            return
+
         if not DEMUCS_OK:
-            raise RuntimeError("Demucs não está instalado no servidor")
+            raise RuntimeError("Demucs não está instalado no servidor e STEMS_SPACE não foi configurado")
 
         stems_dir = OUTPUT_DIR / f"stems_{job_id}"
         stems_dir.mkdir(exist_ok=True)
@@ -639,6 +650,45 @@ def processar_stems_job(job_id, input_path):
     except Exception as e:
         jobs[job_id]["status"] = "error"
         jobs[job_id]["error"] = str(e)
+
+
+def separar_no_space(job_id, input_path):
+    """Envia a faixa para o Space do Hugging Face e baixa o .zip com os stems."""
+    from gradio_client import Client, handle_file
+
+    log = jobs[job_id]["log"]
+    log.append(f"Enviando para o separador na nuvem ({STEMS_SPACE})...")
+    log.append("Se o separador estiver dormindo, ele acorda sozinho (pode levar 1-2 minutos).")
+
+    ultimo_erro = None
+    for tentativa in range(2):
+        try:
+            client = Client(STEMS_SPACE, hf_token=HF_TOKEN, verbose=False,
+                            download_files=str(OUTPUT_DIR))
+            log.append("Separando no Demucs (em CPU leva alguns minutos)...")
+            resultado = client.predict(handle_file(input_path), api_name="/separar")
+            break
+        except Exception as e:
+            ultimo_erro = e
+            if tentativa == 0:
+                log.append("O separador ainda está acordando, tentando de novo em 30 s...")
+                time.sleep(30)
+    else:
+        raise RuntimeError(f"Falha no separador da nuvem: {ultimo_erro}")
+
+    caminho = resultado if isinstance(resultado, str) else (resultado or {}).get("path")
+    if not caminho or not Path(caminho).exists():
+        raise RuntimeError("O separador não devolveu o arquivo .zip")
+
+    zip_path = OUTPUT_DIR / f"{job_id}_stems.zip"
+    shutil.move(caminho, zip_path)
+    with zipfile.ZipFile(zip_path) as zf:
+        for nome in zf.namelist():
+            log.append(f"Adicionado: {nome}")
+
+    jobs[job_id]["output"] = str(zip_path)
+    jobs[job_id]["status"] = "done"
+    log.append("Pronto!")
 
 
 @app.route("/separar", methods=["POST"])
