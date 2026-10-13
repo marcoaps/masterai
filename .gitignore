@@ -2,3 +2,4 @@ uploads/
 outputs/
 __pycache__/
 *.pyc
+masterai.log

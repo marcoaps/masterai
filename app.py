@@ -49,6 +49,15 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 jobs = {}
 
+# Registro em arquivo (masterai.log) para diagnosticar erros sem precisar da janela preta
+import logging, traceback
+logging.basicConfig(
+    filename=str(BASE_DIR / "masterai.log"), level=logging.INFO, encoding="utf-8",
+    format="%(asctime)s %(levelname)s %(message)s")
+log_arq = logging.getLogger("masterai")
+log_arq.info("MasterAI iniciado | python %s | numba=%s | demucs=%s | ffmpeg=%s",
+             sys.version.split()[0], NUMBA_OK, DEMUCS_OK, FFMPEG_OK)
+
 
 # ══════════════════════════════════════════════════════════════
 #  UTILITÁRIOS DE SINAL
@@ -543,6 +552,7 @@ def pipeline_reference(y, sr, ref_path, loudness_target):
 # ══════════════════════════════════════════════════════════════
 
 def processar_job(job_id, input_path, mode, params, ref_path, output_path):
+    log_arq.info("job %s: inicio | modo=%s | params=%s | arquivo=%s", job_id, mode, params, input_path)
     try:
         jobs[job_id]["status"] = "processing"
         log = jobs[job_id]["log"]
@@ -602,10 +612,12 @@ def processar_job(job_id, input_path, mode, params, ref_path, output_path):
         jobs[job_id]["analise_depois"] = analisar(y, sr)
         jobs[job_id]["status"]  = "done"
         jobs[job_id]["output"]  = str(output_path)
+        log_arq.info("job %s: concluido -> %s", job_id, output_path)
         log.append("✅ Masterização concluída!")
 
     except Exception as e:
         jobs[job_id]["status"] = "error"
+        log_arq.error("job %s: ERRO %s\n%s", job_id, e, traceback.format_exc())
         jobs[job_id]["error"]  = str(e)
         jobs[job_id]["log"].append(f"❌ Erro: {e}")
 
@@ -665,6 +677,7 @@ def master():
 @app.route("/status/<job_id>")
 def status(job_id):
     if job_id not in jobs:
+        log_arq.warning("status: job %s não existe (o MasterAI reiniciou?)", job_id)
         return jsonify({"error": "Job não encontrado"}), 404
     return jsonify(jobs[job_id])
 
@@ -728,6 +741,7 @@ def processar_stems_job(job_id, input_path):
 
     except Exception as e:
         jobs[job_id]["status"] = "error"
+        log_arq.error("stems %s: ERRO %s\n%s", job_id, e, traceback.format_exc())
         jobs[job_id]["error"] = str(e)
 
 

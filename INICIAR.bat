@@ -44,7 +44,7 @@ echo  Para fechar, feche esta janela.
 echo.
 
 :LOOP
-python app.py --reload
+python app.py
 echo.
 echo  Servidor encerrado. Pressione ENTER para reiniciar
 echo  ou feche esta janela para sair.
