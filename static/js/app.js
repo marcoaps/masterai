@@ -4,7 +4,9 @@
 const state = {
   fileId: null,
   refId: null,
-  mode: 'auto', // 'auto' = padrão, 'reference' = com faixa de referência
+  mode: 'suno',   // modo enviado ao app.py: 'suno', 'auto' (padrão) ou 'reference'
+  preset: 'suno', // escolha do botão "Tipo de master" (vale quando a referência está desligada)
+  lufs: -14,      // volume final
   jobId: null,
   polling: null,
 };
@@ -49,8 +51,28 @@ el.modeSwitch.addEventListener('click', () => {
   el.labelStandard.classList.toggle('on', !on);
   el.labelReference.classList.toggle('on', on);
   el.referenceZone.classList.toggle('hidden', !on);
-  state.mode = on ? 'reference' : 'auto';
+  state.mode = on ? 'reference' : state.preset;
+  document.getElementById('opcoes-master').querySelector('.opcao').classList.toggle('desligado', on);
 });
+
+// ── Tipo de master e volume final ────────────────────
+const DICAS = {
+  suno: 'Limpa o que a IA estraga: tira o embolado do grave, define o baixo e amacia o agudo metálico.',
+  auto: 'Master "pesada": realça graves e brilho e empurra o volume. Melhor para mixagens gravadas.',
+};
+function ligarSeg(id, aoEscolher) {
+  const seg = document.getElementById(id);
+  seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    aoEscolher(b);
+  }));
+}
+ligarSeg('seg-preset', b => {
+  state.preset = b.dataset.mode;
+  if (state.mode !== 'reference') state.mode = state.preset;
+  document.getElementById('dica-preset').textContent = DICAS[state.preset];
+});
+ligarSeg('seg-lufs', b => { state.lufs = Number(b.dataset.lufs); });
 
 // ── Upload do arquivo principal ──────────────────────
 ['dragover', 'dragenter'].forEach(evt =>
@@ -124,7 +146,7 @@ async function startMaster() {
     // params fica vazio por enquanto — é aqui que entram os macro controles
     // (Loudness, Width, Bass, Air, Presence, Harshness) quando essa fase for implementada.
     // As chaves precisam bater com o que processar_job() espera no app.py.
-    params: {},
+    params: { lufs: state.lufs },
   };
   if (state.mode === 'reference' && state.refId) {
     body.ref_id = state.refId;

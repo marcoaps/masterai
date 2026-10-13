@@ -20,7 +20,18 @@ except ImportError as e:
     print(f"⚠️  Dep faltando: {e}")
 
 FFMPEG_OK = shutil.which("ffmpeg") is not None
-DEMUCS_OK = shutil.which("demucs") is not None
+import importlib.util
+DEMUCS_OK = importlib.util.find_spec("demucs") is not None
+
+# Aceleração dos laços de compressor/limiter (o numba já vem junto com o librosa)
+try:
+    from numba import njit
+    NUMBA_OK = True
+except Exception:
+    NUMBA_OK = False
+    def njit(*a, **k):
+        def deco(f): return f
+        return deco(a[0]) if a and callable(a[0]) else deco
 
 # Separação de stems no Hugging Face Spaces (grátis, 16 GB de RAM).
 # Configure no Render a variável STEMS_SPACE com o nome do Space,
@@ -44,10 +55,13 @@ jobs = {}
 # ══════════════════════════════════════════════════════════════
 
 def ap(y, func):
-    """Aplica função canal a canal."""
+    """Aplica função canal a canal (sempre devolve float32 para economizar memória)."""
     if y.ndim == 2:
-        return np.column_stack([func(y[:, i]) for i in range(y.shape[1])])
-    return func(y)
+        out = np.empty(y.shape, dtype=np.float32)
+        for i in range(y.shape[1]):
+            out[:, i] = func(y[:, i])
+        return out
+    return np.asarray(func(y), dtype=np.float32)
 
 def norm(y, ceil=0.98):
     pk = np.max(np.abs(y)) + 1e-9
@@ -105,6 +119,31 @@ def shelf_lo(y, sr, freq, gain_db):
 #  Este é o coração do "peso" — Volume alto sem estourar
 # ══════════════════════════════════════════════════════════════
 
+@njit(cache=True)
+def _comp_gain(canal, thresh, makeup, knee, att, rel, ratio):
+    n = canal.shape[0]
+    gain = np.empty(n)
+    env = 0.0
+    for i in range(n):
+        lv = abs(canal[i])
+        if lv > env:
+            env += att * (lv - env)
+        else:
+            env += rel * (lv - env)
+        if env < thresh / knee:
+            gain[i] = makeup
+        elif env < thresh * knee:
+            over = env - thresh / knee
+            zone = thresh * knee - thresh / knee
+            frac = over / (zone + 1e-9)
+            r_eff = 1 + (ratio - 1) * frac * 0.5
+            gain[i] = (thresh / knee + over / r_eff) / (env + 1e-9) * makeup
+        else:
+            red = thresh + (env - thresh) / ratio
+            gain[i] = red / (env + 1e-9) * makeup
+    return gain
+
+
 def compressor_vca(canal, sr, thr_db=-18, ratio=4.0,
                    att_ms=8, rel_ms=100, makeup_db=4.0, knee_db=4.0):
     """
@@ -116,25 +155,9 @@ def compressor_vca(canal, sr, thr_db=-18, ratio=4.0,
     knee    = 10 ** (knee_db / 20)
     att     = 1 - np.exp(-1 / (sr * att_ms / 1000))
     rel     = 1 - np.exp(-1 / (sr * rel_ms / 1000))
-    gain    = np.ones(len(canal))
-    env     = 0.0
-    for i in range(len(canal)):
-        lv   = abs(canal[i])
-        env += att * (lv - env) if lv > env else rel * (lv - env)
-        # Soft knee
-        if env < thresh / knee:
-            gain[i] = makeup
-        elif env < thresh * knee:
-            # Zona de knee
-            over   = env - thresh / knee
-            zone   = thresh * knee - thresh / knee
-            frac   = over / (zone + 1e-9)
-            r_eff  = 1 + (ratio - 1) * frac * 0.5
-            gain[i] = (thresh / knee + over / r_eff) / (env + 1e-9) * makeup
-        else:
-            red    = thresh + (env - thresh) / ratio
-            gain[i] = red / (env + 1e-9) * makeup
-    return canal * np.clip(gain, 0, 8)
+    gain    = _comp_gain(np.ascontiguousarray(canal, dtype=np.float64),
+                         thresh, makeup, knee, att, rel, ratio)
+    return (canal * np.clip(gain, 0, 8)).astype(np.float32)
 
 
 def saturacao_tape(canal, sr, drive=0.5, harmonicos=0.35):
@@ -176,6 +199,26 @@ def clipper_suave(canal, thr=0.80):
     return out
 
 
+@njit(cache=True)
+def _lim(c, la, ceil, rel_c):
+    n = c.shape[0]
+    padded = np.zeros(n + la)
+    padded[:n] = np.abs(c)
+    out = np.empty(n)
+    g = 1.0
+    for i in range(n):
+        pk = 0.0
+        for k in range(i, i + la + 1):
+            if padded[k] > pk:
+                pk = padded[k]
+        if pk * g > ceil:
+            g = ceil / (pk + 1e-9)
+        else:
+            g = min(1.0, g + rel_c * (1.0 - g))
+        out[i] = c[i] * g
+    return out
+
+
 def limiter_lookahead(y, sr, ceil_db=-0.3, lookahead_ms=3, release_ms=60):
     """
     Limiter brick-wall com lookahead.
@@ -186,19 +229,7 @@ def limiter_lookahead(y, sr, ceil_db=-0.3, lookahead_ms=3, release_ms=60):
     rel_c   = 1 - np.exp(-1 / (sr * release_ms / 1000))
 
     def lim_canal(c):
-        # Pad com lookahead
-        padded = np.concatenate([c, np.zeros(la)])
-        out    = np.zeros(len(c))
-        g      = 1.0
-        for i in range(len(c)):
-            # Pico com lookahead
-            pk = np.max(np.abs(padded[i:i+la+1]))
-            if pk * g > ceil:
-                g = ceil / (pk + 1e-9)
-            else:
-                g = min(1.0, g + rel_c * (1.0 - g))
-            out[i] = c[i] * g
-        return out
+        return _lim(np.ascontiguousarray(c, dtype=np.float64), la, ceil, rel_c)
 
     return ap(y, lim_canal)
 
@@ -391,6 +422,45 @@ def pipeline_auto(y, sr, loudness_target, genre):
 
 
 # ══════════════════════════════════════════════════════════════
+#  PIPELINE SUNO — limpa os defeitos típicos de música gerada por IA
+# ══════════════════════════════════════════════════════════════
+
+def pipeline_suno(y, sr, loudness_target):
+    """
+    Feito para faixas do Suno: em vez de "empurrar" volume, limpa.
+    Cadeia: HP → tira embolado → define o baixo → amacia agudo metálico
+          → saturação leve → compressão de barramento suave
+          → grave em mono → clipper leve → maximizer
+    Sem exciter e sem sub sintético: os dois realçam artefatos da IA.
+    """
+    y = ap(y, lambda c: sosfilt(make_hp(sr, 28, 4), c))   # infra/ruído de baixa
+    y = peaking(y, sr,  250, -2.5, Q=1.2)    # tira o embolado (lama)
+    y = peaking(y, sr,   80,  2.0, Q=0.9)    # corpo do baixo
+    y = peaking(y, sr,  800,  1.0, Q=1.5)    # ataque/definição das notas do baixo
+    y = peaking(y, sr, 3200, -1.0, Q=1.8)    # aspereza da voz gerada
+    y = peaking(y, sr, 7000, -1.5, Q=2.5)    # sibilância/chiado
+    y = shelf_hi(y, sr, 14000, -4.0)         # brilho metálico ("shimmer") da IA
+    y = ap(y, lambda c: sosfilt(make_lp(sr, 18500, 2), c))
+
+    y = ap(y, lambda c: saturacao_tape(c, sr, drive=0.25, harmonicos=0.20))
+
+    # compressão de barramento suave (cola a mix sem esmagar)
+    y = ap(y, lambda c: compressor_vca(c, sr, thr_db=-18, ratio=2.0,
+                                       att_ms=30, rel_ms=150, makeup_db=2.0, knee_db=6.0))
+
+    # grave em mono abaixo de 150 Hz (baixo firme e centralizado)
+    if y.ndim == 2:
+        L, R = y[:, 0].astype(np.float64), y[:, 1].astype(np.float64)
+        mid, side = (L + R) / 2, (L - R) / 2
+        side = sosfilt(make_hp(sr, 150, 2), side) * 1.05
+        y = norm(np.column_stack([mid + side, mid - side]).astype(np.float32), 0.97)
+
+    y = ap(y, lambda c: clipper_suave(c, thr=0.90))
+    y = maximizer(y, sr, target_lufs=loudness_target, ceil_db=-1.0)
+    return y
+
+
+# ══════════════════════════════════════════════════════════════
 #  PIPELINE ADVANCED
 # ══════════════════════════════════════════════════════════════
 
@@ -485,7 +555,7 @@ def processar_job(job_id, input_path, mode, params, ref_path, output_path):
         log.append("Analisando espectro original...")
         jobs[job_id]["analise_antes"] = analisar(y, sr)
 
-        loudness_target = params.get("lufs", -9.0)
+        loudness_target = params.get("lufs", -14.0 if mode == "suno" else -9.0)
 
         if mode == "auto":
             genre = params.get("genre", "default")
@@ -498,6 +568,15 @@ def processar_job(job_id, input_path, mode, params, ref_path, output_path):
             log.append("Soft clipper 2 estágios...")
             log.append("Maximizer multipass (peso)...")
             y = pipeline_auto(y, sr, loudness_target, genre)
+
+        elif mode == "suno":
+            log.append(f"Modo Suno — alvo: {loudness_target} LUFS")
+            log.append("Limpando o grave embolado...")
+            log.append("Definindo o baixo...")
+            log.append("Amaciando agudos metálicos da IA...")
+            log.append("Compressão suave + grave em mono...")
+            log.append("Maximizer...")
+            y = pipeline_suno(y, sr, loudness_target)
 
         elif mode == "advanced":
             log.append("Modo Avançado...")
@@ -615,13 +694,13 @@ def processar_stems_job(job_id, input_path):
             return
 
         if not DEMUCS_OK:
-            raise RuntimeError("Demucs não está instalado no servidor e STEMS_SPACE não foi configurado")
+            raise RuntimeError("Demucs não está instalado. Feche o MasterAI e rode o INICIAR.bat de novo para instalar.")
 
         stems_dir = OUTPUT_DIR / f"stems_{job_id}"
         stems_dir.mkdir(exist_ok=True)
 
         result = subprocess.run(
-            ["demucs", "-n", "htdemucs", "-o", str(stems_dir), input_path],
+            [sys.executable, "-m", "demucs", "-n", "htdemucs", "-o", str(stems_dir), input_path],
             capture_output=True, text=True
         )
         if result.returncode != 0:

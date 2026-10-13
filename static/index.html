@@ -50,6 +50,24 @@
         <div class="formats">WAV, AIFF, FLAC, M4A/AAC, MP3, MID</div>
       </label>
 
+      <div class="opcoes-master" id="opcoes-master">
+        <div class="opcao">
+          <span class="opcao-label">Tipo de master</span>
+          <div class="seg" id="seg-preset" role="group" aria-label="Tipo de master">
+            <button type="button" class="on" data-mode="suno">Suno (IA)</button>
+            <button type="button" data-mode="auto">Padrão</button>
+          </div>
+          <p class="opcao-dica" id="dica-preset">Limpa o que a IA estraga: tira o embolado do grave, define o baixo e amacia o agudo metálico.</p>
+        </div>
+        <div class="opcao">
+          <span class="opcao-label">Volume final</span>
+          <div class="seg" id="seg-lufs" role="group" aria-label="Volume final">
+            <button type="button" class="on" data-lufs="-14">Streaming (−14 LUFS)</button>
+            <button type="button" data-lufs="-9">Forte (−9 LUFS)</button>
+          </div>
+        </div>
+      </div>
+
       <div class="mode-toggle">
         <span class="on" id="label-standard">PADRÃO</span>
         <div class="switch" id="mode-switch"><div class="knob"></div></div>
@@ -73,7 +91,7 @@
     </div>
 
     <div id="panel-stems" class="hidden">
-      <p class="hint">Separe vocais, bateria, baixo e outros instrumentos com o Demucs. A separação roda na nuvem e leva alguns minutos.</p>
+      <p class="hint">Separe vocais, bateria, baixo e outros instrumentos com o Demucs. A separação roda no seu computador e leva alguns minutos (a primeira vez demora mais, porque baixa o modelo).</p>
 
       <label class="dropzone" id="stems-dropzone">
         <input type="file" id="stems-input" accept=".wav,.flac,.mp3,.m4a,.aac,.ogg">

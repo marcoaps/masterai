@@ -1,0 +1,28 @@
+MasterAI - uso local (sem servidor, sem custo)
+=============================================
+
+COMO ABRIR
+1. De dois cliques em INICIAR.bat.
+2. Na primeira vez ele instala tudo sozinho (inclusive o separador de
+   stems Demucs, uns 300 MB). Pode demorar alguns minutos.
+3. O navegador abre em http://localhost:5000.
+4. Para fechar, feche a janela preta do INICIAR.bat.
+
+PRECISA TER
+- Python instalado (3.10, 3.11 ou 3.12 sao os mais garantidos).
+  Na instalacao do Python, marque "Add Python to PATH".
+
+MASTERIZAR
+- Tipo de master:
+    Suno (IA)  -> limpa o grave embolado, define o baixo e amacia o
+                  agudo metalico. Use nas musicas do Suno.
+    Padrao     -> master "pesada", realca grave e brilho.
+- Volume final:
+    Streaming (-14 LUFS) -> volume das plataformas (Spotify, YouTube).
+    Forte (-9 LUFS)      -> bem alto, menos dinamica.
+- Referencia: ligue a chave para copiar o timbre de outra musica.
+
+SEPARADOR DE STEMS
+- Aba "Separador de stems": separa voz, bateria, baixo e outros.
+- Roda no seu PC. A primeira separacao baixa o modelo (uns 80 MB).
+- Leva alguns minutos por musica, porque usa so o processador.
