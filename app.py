@@ -642,6 +642,8 @@ def upload():
     ext = Path(f.filename).suffix.lower()
     path = UPLOAD_DIR / f"{uid}{ext}"
     f.save(path)
+    # guarda o nome original para devolver a master com o mesmo nome
+    (UPLOAD_DIR / f"{uid}.nome").write_text(Path(f.filename).stem, encoding="utf-8")
     return jsonify({"file_id": uid, "filename": f.filename, "ext": ext})
 
 @app.route("/master", methods=["POST"])
@@ -700,14 +702,25 @@ def ouvir(job_id):
     return send_file(jobs[job_id]["output"], conditional=True, mimetype="audio/wav")
 
 
+def nome_original(input_path, padrao):
+    """Nome da música enviada (sem extensão), limpo para usar como nome de arquivo."""
+    try:
+        nome = Path(input_path).with_suffix(".nome").read_text(encoding="utf-8").strip()
+    except Exception:
+        nome = ""
+    nome = "".join(c for c in nome if c not in '\\/:*?"<>|').strip()
+    return nome or padrao
+
+
 @app.route("/download/<job_id>")
 def download(job_id):
     if job_id not in jobs or jobs[job_id]["status"] != "done":
         return jsonify({"error": "Arquivo não pronto"}), 404
+    nome = nome_original(jobs[job_id].get("input", ""), f"master_{job_id}")
     return send_file(
         jobs[job_id]["output"],
         as_attachment=True,
-        download_name=f"master_{job_id}.wav",
+        download_name=f"{nome}.wav",
         mimetype="audio/wav"
     )
 
@@ -815,7 +828,8 @@ def separar():
         return jsonify({"error": "Arquivo não encontrado"}), 404
 
     job_id = str(uuid.uuid4())[:8]
-    jobs[job_id] = {"status": "queued", "log": [], "file_id": file_id, "mode": "stems"}
+    jobs[job_id] = {"status": "queued", "log": [], "file_id": file_id, "mode": "stems",
+                    "input": str(input_path)}
 
     t = threading.Thread(
         target=processar_stems_job,
@@ -831,8 +845,9 @@ def download_stems(job_id):
     if job_id not in jobs or jobs[job_id]["status"] != "done":
         return jsonify({"error": "Arquivo não pronto"}), 404
     path = jobs[job_id]["output"]
+    nome = nome_original(jobs[job_id].get("input", ""), f"stems_{job_id}")
     return send_file(path, as_attachment=True,
-                     download_name=f"stems_{job_id}.zip",
+                     download_name=f"{nome} - stems.zip",
                      mimetype="application/zip")
 
 
