@@ -59,6 +59,14 @@
           </div>
           <p class="opcao-dica" id="dica-preset">Limpa o que a IA estraga: tira o embolado do grave, define o baixo e amacia o agudo metálico.</p>
         </div>
+        <div class="opcao" id="opcao-intensidade">
+          <span class="opcao-label">Intensidade da limpeza</span>
+          <div class="seg" id="seg-intens" role="group" aria-label="Intensidade da limpeza">
+            <button type="button" data-intens="leve">Leve</button>
+            <button type="button" class="on" data-intens="normal">Normal</button>
+            <button type="button" data-intens="forte">Forte</button>
+          </div>
+        </div>
         <div class="opcao">
           <span class="opcao-label">Volume final</span>
           <div class="seg" id="seg-lufs" role="group" aria-label="Volume final">
@@ -86,6 +94,15 @@
       <div id="progress" class="progress hidden">
         <div class="progress-status" id="progress-status">Enviando…</div>
         <div class="progress-log" id="progress-log"></div>
+        <div id="comparar" class="comparar hidden">
+          <div class="comparar-numeros" id="comparar-numeros"></div>
+          <audio id="player" controls preload="auto"></audio>
+          <div class="seg" id="seg-ab" role="group" aria-label="Comparar">
+            <button type="button" class="on" data-ab="master">Ouvir master</button>
+            <button type="button" data-ab="original">Ouvir original</button>
+          </div>
+          <label class="igualar"><input type="checkbox" id="igualar" checked> Igualar volume (para julgar o timbre, não o volume)</label>
+        </div>
         <a id="btn-download" class="btn-primary hidden" href="#">Baixar master</a>
       </div>
     </div>

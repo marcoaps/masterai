@@ -434,7 +434,7 @@ def pipeline_auto(y, sr, loudness_target, genre):
 #  PIPELINE SUNO — limpa os defeitos típicos de música gerada por IA
 # ══════════════════════════════════════════════════════════════
 
-def pipeline_suno(y, sr, loudness_target):
+def pipeline_suno(y, sr, loudness_target, k=1.5):
     """
     Feito para faixas do Suno: em vez de "empurrar" volume, limpa.
     Cadeia: HP → tira embolado → define o baixo → amacia agudo metálico
@@ -443,19 +443,20 @@ def pipeline_suno(y, sr, loudness_target):
     Sem exciter e sem sub sintético: os dois realçam artefatos da IA.
     """
     y = ap(y, lambda c: sosfilt(make_hp(sr, 28, 4), c))   # infra/ruído de baixa
-    y = peaking(y, sr,  250, -2.5, Q=1.2)    # tira o embolado (lama)
-    y = peaking(y, sr,   80,  2.0, Q=0.9)    # corpo do baixo
-    y = peaking(y, sr,  800,  1.0, Q=1.5)    # ataque/definição das notas do baixo
-    y = peaking(y, sr, 3200, -1.0, Q=1.8)    # aspereza da voz gerada
-    y = peaking(y, sr, 7000, -1.5, Q=2.5)    # sibilância/chiado
-    y = shelf_hi(y, sr, 14000, -4.0)         # brilho metálico ("shimmer") da IA
+    # k = intensidade (1.0 leve, 1.5 normal, 2.0 forte): multiplica todas as correções
+    y = peaking(y, sr,  250, -2.5*k, Q=1.2)    # tira o embolado (lama)
+    y = peaking(y, sr,   80,  2.0*k, Q=0.9)    # corpo do baixo
+    y = peaking(y, sr,  800,  1.0*k, Q=1.5)    # ataque/definição das notas do baixo
+    y = peaking(y, sr, 3200, -1.0*k, Q=1.8)    # aspereza da voz gerada
+    y = peaking(y, sr, 7000, -1.5*k, Q=2.5)    # sibilância/chiado
+    y = shelf_hi(y, sr, 14000, -4.0*k)         # brilho metálico ("shimmer") da IA
     y = ap(y, lambda c: sosfilt(make_lp(sr, 18500, 2), c))
 
     y = ap(y, lambda c: saturacao_tape(c, sr, drive=0.25, harmonicos=0.20))
 
     # compressão de barramento suave (cola a mix sem esmagar)
-    y = ap(y, lambda c: compressor_vca(c, sr, thr_db=-18, ratio=2.0,
-                                       att_ms=30, rel_ms=150, makeup_db=2.0, knee_db=6.0))
+    y = ap(y, lambda c: compressor_vca(c, sr, thr_db=-18, ratio=1.5 + 0.5*k,
+                                       att_ms=30, rel_ms=150, makeup_db=1.0 + k, knee_db=6.0))
 
     # grave em mono abaixo de 150 Hz (baixo firme e centralizado)
     if y.ndim == 2:
@@ -580,13 +581,15 @@ def processar_job(job_id, input_path, mode, params, ref_path, output_path):
             y = pipeline_auto(y, sr, loudness_target, genre)
 
         elif mode == "suno":
-            log.append(f"Modo Suno — alvo: {loudness_target} LUFS")
+            intens = params.get("intensidade", "normal")
+            k = {"leve": 1.0, "normal": 1.5, "forte": 2.0}.get(intens, 1.5)
+            log.append(f"Modo Suno ({intens}) — alvo: {loudness_target} LUFS")
             log.append("Limpando o grave embolado...")
             log.append("Definindo o baixo...")
             log.append("Amaciando agudos metálicos da IA...")
             log.append("Compressão suave + grave em mono...")
             log.append("Maximizer...")
-            y = pipeline_suno(y, sr, loudness_target)
+            y = pipeline_suno(y, sr, loudness_target, k)
 
         elif mode == "advanced":
             log.append("Modo Avançado...")
@@ -664,7 +667,7 @@ def master():
 
     job_id      = str(uuid.uuid4())[:8]
     output_path = OUTPUT_DIR / f"{job_id}_master.wav"
-    jobs[job_id] = {"status": "queued", "log": [], "mode": mode}
+    jobs[job_id] = {"status": "queued", "log": [], "mode": mode, "input": str(input_path)}
 
     threading.Thread(
         target=processar_job,
@@ -680,6 +683,22 @@ def status(job_id):
         log_arq.warning("status: job %s não existe (o MasterAI reiniciou?)", job_id)
         return jsonify({"error": "Job não encontrado"}), 404
     return jsonify(jobs[job_id])
+
+@app.route("/original/<job_id>")
+def original(job_id):
+    """Serve a faixa original para o comparador antes/depois."""
+    if job_id not in jobs or not jobs[job_id].get("input"):
+        return jsonify({"error": "Original não encontrada"}), 404
+    return send_file(jobs[job_id]["input"], conditional=True)
+
+
+@app.route("/ouvir/<job_id>")
+def ouvir(job_id):
+    """Serve a master para tocar no navegador (sem forçar download)."""
+    if job_id not in jobs or jobs[job_id]["status"] != "done":
+        return jsonify({"error": "Arquivo não pronto"}), 404
+    return send_file(jobs[job_id]["output"], conditional=True, mimetype="audio/wav")
+
 
 @app.route("/download/<job_id>")
 def download(job_id):
@@ -713,7 +732,7 @@ def processar_stems_job(job_id, input_path):
         stems_dir.mkdir(exist_ok=True)
 
         result = subprocess.run(
-            [sys.executable, "-m", "demucs", "-n", "htdemucs", "-o", str(stems_dir), input_path],
+            [sys.executable, str(BASE_DIR / "stems_local.py"), input_path, str(stems_dir)],
             capture_output=True, text=True
         )
         if result.returncode != 0:
@@ -722,12 +741,9 @@ def processar_stems_job(job_id, input_path):
             raise RuntimeError(detalhes)
 
         jobs[job_id]["log"].append("Separação concluída, compactando arquivos...")
-
-        # Demucs gera: stems_dir/htdemucs/<nome_do_arquivo>/{vocals,drums,bass,other}.wav
-        track_name = Path(input_path).stem
-        stems_output = stems_dir / "htdemucs" / track_name
-        if not stems_output.exists():
-            raise RuntimeError("Pasta de stems não encontrada após a separação")
+        stems_output = stems_dir
+        if not any(stems_output.glob("*.wav")):
+            raise RuntimeError("A separação terminou, mas não gerou as faixas")
 
         zip_path = OUTPUT_DIR / f"{job_id}_stems.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:

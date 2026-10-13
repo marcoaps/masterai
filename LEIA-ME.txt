@@ -9,18 +9,27 @@ COMO ABRIR
 4. Para fechar, feche a janela preta do INICIAR.bat.
 
 PRECISA TER
-- Python instalado (3.10, 3.11 ou 3.12 sao os mais garantidos).
+- Python instalado (qualquer versao recente, inclusive 3.14).
   Na instalacao do Python, marque "Add Python to PATH".
 
 MASTERIZAR
 - Tipo de master:
     Suno (IA)  -> limpa o grave embolado, define o baixo e amacia o
                   agudo metalico. Use nas musicas do Suno.
+                  Intensidade: Leve, Normal ou Forte.
     Padrao     -> master "pesada", realca grave e brilho.
 - Volume final:
     Streaming (-14 LUFS) -> volume das plataformas (Spotify, YouTube).
     Forte (-9 LUFS)      -> bem alto, menos dinamica.
 - Referencia: ligue a chave para copiar o timbre de outra musica.
+
+COMPARAR
+- Quando a master fica pronta aparece um player. Alterne entre
+  "Ouvir master" e "Ouvir original" no mesmo ponto da musica.
+- Deixe "Igualar volume" marcado para julgar o timbre, nao o volume.
+
+SE DER ERRO
+- O MasterAI grava tudo em masterai.log, nesta pasta.
 
 SEPARADOR DE STEMS
 - Aba "Separador de stems": separa voz, bateria, baixo e outros.
