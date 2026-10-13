@@ -806,8 +806,26 @@ def download_stems(job_id):
                      mimetype="application/zip")
 
 
+def abrir_navegador_quando_pronto(url="http://localhost:5000", limite_s=120):
+    """Espera o servidor responder e só então abre o navegador (evita 'conexão recusada')."""
+    import socket, webbrowser
+    def esperar():
+        fim = time.time() + limite_s
+        while time.time() < fim:
+            try:
+                with socket.create_connection(("127.0.0.1", 5000), timeout=1):
+                    webbrowser.open(url)
+                    return
+            except OSError:
+                time.sleep(0.5)
+    threading.Thread(target=esperar, daemon=True).start()
+
+
 if __name__ == "__main__":
     reload = "--reload" in sys.argv
+    # com auto-reload o Flask roda em 2 processos; abre o navegador só no primeiro
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        abrir_navegador_quando_pronto()
     print("🎵 MasterAI Pro — http://localhost:5000")
     if reload:
         print("   Auto-reload ativo")

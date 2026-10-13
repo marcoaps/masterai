@@ -38,12 +38,12 @@ set STEMS_SPACE=
 
 echo.
 echo  Servidor iniciando em http://localhost:5000
-echo  O navegador vai abrir automaticamente.
+echo  O navegador abre sozinho quando o MasterAI estiver pronto.
+echo  Se nao abrir, acesse http://localhost:5000
 echo  Para fechar, feche esta janela.
 echo.
 
 :LOOP
-start "" http://localhost:5000
 python app.py --reload
 echo.
 echo  Servidor encerrado. Pressione ENTER para reiniciar
