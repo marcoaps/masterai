@@ -247,6 +247,11 @@ function mostrarComparador(jobId, job) {
     b.onclick = () => { seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); tocar(b.dataset.ab); };
   });
   document.getElementById('igualar').onchange = () => { player.volume = volumeDe(atual); };
+  player.onerror = () => {
+    document.getElementById('comparar-numeros').innerHTML +=
+      '<br><span style="color:var(--coral)">Não foi possível carregar o áudio para ouvir aqui. Feche a janela preta do MasterAI, abra o INICIAR.bat de novo e masterize outra vez. O botão "Baixar master" continua funcionando.</span>';
+    player.onerror = null;
+  };
   player.src = fontes.master;
   player.volume = volumeDe('master');
   box.classList.remove('hidden');
